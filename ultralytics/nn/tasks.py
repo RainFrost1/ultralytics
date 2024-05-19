@@ -49,10 +49,11 @@ from ultralytics.nn.modules import (
     Segment,
     Silence,
     WorldDetect,
+    Feature,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
-from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8OBBLoss, v8PoseLoss, v8SegmentationLoss
+from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8OBBLoss, v8PoseLoss, v8SegmentationLoss, v8FeatureLoss
 from ultralytics.utils.plotting import feature_visualization
 from ultralytics.utils.torch_utils import (
     fuse_conv_and_bn,
@@ -436,6 +437,39 @@ class ClassificationModel(BaseModel):
     def init_criterion(self):
         """Initialize the loss criterion for the ClassificationModel."""
         return v8ClassificationLoss()
+
+
+class FeatureModel(BaseModel):
+
+    def __init__(self, cfg="yolov8n-feature.yaml", ch=3, nc=None, verbose=True):
+        """Init FeatureModel with YAML, channels, number of classes, verbose flag."""
+        super().__init__()
+        self.cfg_dict = deepcopy(cfg)
+        self._from_yaml(cfg, ch, nc, verbose)
+
+    def _from_yaml(self, cfg, ch, nc, verbose):
+        """Set YOLOv8 model configurations and define the model architecture."""
+        self.yaml = cfg if isinstance(cfg, dict) else yaml_model_load(cfg)  # cfg dict
+
+        # Define model
+        ch = self.yaml["ch"] = self.yaml.get("ch", ch)  # input channels
+        if nc and nc != self.yaml["nc"]:
+            LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
+            self.yaml["nc"] = nc  # override YAML value
+        elif not nc and not self.yaml.get("nc", None):
+            raise ValueError("nc not specified. Must specify nc in model.yaml or function arguments.")
+        self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
+        self.stride = torch.Tensor([1])  # no stride constraints
+        self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
+        self.info()
+
+    def init_criterion(self):
+        """Initialize the loss criterion for the ClassificationModel."""
+        if self.training:
+            return v8FeatureLoss(self.cfg_dict["MetricLoss"], self.cfg_dict["ClsLoss"])
+        else:
+            #  return v8FeatureLoss(self.cfg_dict["MetricLoss"], self.cfg_dict["ClsLoss"])
+            return v8ClassificationLoss()
 
 
 class RTDETRDetectionModel(DetectionModel):
@@ -885,6 +919,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             DWConvTranspose2d,
             C3x,
             RepC3,
+            Feature,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -928,7 +963,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         else:
             c2 = ch[f]
 
-        m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
+        if m is Feature:
+            m_ = m(*args, feature_dim=d['feature_dim'])
+        else:
+            m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
         t = str(m)[8:-2].replace("__main__.", "")  # module type
         m.np = sum(x.numel() for x in m_.parameters())  # number params
         m_.i, m_.f, m_.type = i, f, t  # attach index, 'from' index, type
@@ -1006,6 +1044,8 @@ def guess_model_task(model):
             return "pose"
         if m == "obb":
             return "obb"
+        if m in {"feature", "fea", "recognition", "rec"}:
+            return "feature"
 
     # Guess from model cfg
     if isinstance(model, dict):
