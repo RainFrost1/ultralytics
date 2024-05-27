@@ -815,8 +815,12 @@ class v8FeatureLoss:
         self.cls_loss_weight = cls_loss_cfg.get('weight', 1)
 
     def __call__(self, preds, batch):
+        loss = torch.zeros(2, device=preds[0].device)  # box, cls, dfl
         metric_loss, metric_loss_item = self.metric_loss(preds[0], batch["cls"])
         ce_loss = self.cls_loss(preds[1], batch["cls"])
         loss_total = self.metric_loss_weight * metric_loss + self.cls_loss_weight * ce_loss
-        loss_items = ce_loss.detach() + metric_loss_item
-        return loss_total, loss_items
+        #  loss_items = ce_loss.detach() + metric_loss_item
+        #  return loss_total, loss_items
+        loss[0] = metric_loss_item
+        loss[1] = ce_loss.detach()
+        return loss_total, loss.detach()

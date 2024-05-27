@@ -8,6 +8,6 @@ import torch
 # Train the model
 # results = model.train(data="../feature_dataset//caltech-101/", cfg="./tools/default.yaml")
 #  model.load_state_dict(torch.load('./runs/feature/train7/weights/best.pt'))
-model = YOLO("./runs/feature/train5/weights/best.pt")
+model = YOLO("./runs/feature/train7/weights/best.pt")
 model.export(format='onnx', dynamic=True, imgsz=224)
 model.export(format='tflite', int8=False, batch=1, half=True, imgsz=224)

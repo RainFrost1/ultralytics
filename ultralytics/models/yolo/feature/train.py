@@ -135,7 +135,7 @@ class FeatureTrainer(BaseTrainer):
 
     def get_validator(self):
         """Returns an instance of ClassificationValidator for validation."""
-        self.loss_names = ["loss"]
+        self.loss_names = "ml_loss", "cls_loss"
         return yolo.feature.FeatureValidator(self.test_loader, self.save_dir, _callbacks=self.callbacks)
 
     def label_loss_items(self, loss_items=None, prefix="train"):
@@ -147,7 +147,7 @@ class FeatureTrainer(BaseTrainer):
         keys = [f"{prefix}/{x}" for x in self.loss_names]
         if loss_items is None:
             return keys
-        loss_items = [round(float(loss_items), 5)]
+        loss_items = [round(float(x), 5) for x in loss_items]
         return dict(zip(keys, loss_items))
 
     def plot_metrics(self):

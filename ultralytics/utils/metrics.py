@@ -1287,3 +1287,100 @@ class OBBMetrics(SimpleClass):
     def curves_results(self):
         """Returns a list of curves for accessing specific metrics curves."""
         return []
+
+
+class FeatureMetrics(SimpleClass):
+    """
+    Class for computing feature metrics including recall-1 and recall-5 accuracy.
+
+    Attributes:
+        recall1 (float): The recall-1 accuracy.
+        recall5 (float): The recall-5 accuracy.
+        speed (Dict[str, float]): A dictionary containing the time taken for each step in the pipeline.
+
+    Properties:
+        fitness (float): The fitness of the model, which is equal to recall-5 accuracy.
+        results_dict (Dict[str, Union[float, str]]): A dictionary containing the classification metrics and fitness.
+        keys (List[str]): A list of keys for the results_dict.
+
+    Methods:
+        process(targets, pred): Processes the targets and predictions to compute classification metrics.
+    """
+
+    def __init__(self) -> None:
+        """Initialize a ClassifyMetrics instance."""
+        self.recall1 = 0
+        self.recall5 = 0
+        self.mAP = 0
+        self.speed = {"preprocess": 0.0, "inference": 0.0, "loss": 0.0, "postprocess": 0.0}
+        self.task = "feature"
+
+    def process(self, targets, pred):
+        """Target classes and predicted classes."""
+        #  pred, targets = torch.cat(pred), torch.cat(targets)
+        #  correct = (targets[:, None] == pred).float()
+        #  acc = torch.stack((correct[:, 0], correct.max(1).values), dim=1)  # (top1, top5) accuracy
+        #  self.top1, self.top5 = acc.mean(0).tolist()
+        sim_block_size = 64
+        sections = [sim_block_size] * (len(pred) // sim_block_size)
+        if len(pred) % sim_block_size:
+            sections.append(len(pred) % sim_block_size)
+
+        pred_blocks = torch.split(pred, split_size_or_sections=sections)
+        targets_blocks = torch.split(targets, split_size_or_sections=sections)
+        similarity_matrix_total = None
+
+        for block_idx, block_feas in enumerate(pred_blocks):
+            similarity_matrix = torch.matmul(block_feas, pred.t())
+            similarity_matrix_total = similarity_matrix if similarity_matrix_total is None else \
+                    torch.concat((similarity_matrix_total, similarity_matrix), 0)
+
+        indices = torch.argsort(similarity_matrix_total, dim=1, descending=True)
+        cmc = torch.zeros(5, device=similarity_matrix_total.device)
+        num_valid_queries = 0
+        aps = []
+        for i in range(len(targets)):
+            # 获取当前查询图像的标签
+            query_label = targets[i]
+            # 获取当前查询图像的检索结果排序索引
+            sorted_indices = indices[i]
+            # 去除自身（假设自身检索时位于第一个）
+            sorted_indices = sorted_indices[sorted_indices != i]
+            # 获取排序后的标签
+            sorted_labels = targets[sorted_indices]
+
+            # 查找第一个匹配的位置
+            correct_rank = (sorted_labels == query_label).nonzero(as_tuple=True)[0]
+            if correct_rank.size(0) > 0:
+                cmc[correct_rank[0]:] += 1
+                num_valid_queries += 1
+
+            correct = (sorted_labels == query_label).float().cpu()
+            precision_at_i = correct.cumsum(0) / torch.arange(1, correct.size(0) + 1).float()
+            ap = (precision_at_i * correct).sum() / correct.sum()
+            aps.append(ap.item())
+
+        cmc = cmc.float() / num_valid_queries
+        self.recall1 = cmc[0].cpu().numpy()
+        self.recall5 = cmc[4].cpu().numpy()
+        self.mAP = np.mean(aps)
+
+    @property
+    def results_dict(self):
+        """Returns a dictionary with model's performance metrics and fitness score."""
+        return dict(zip(self.keys, [self.mAP, self.recall1, self.recall5]))
+
+    @property
+    def keys(self):
+        """Returns a list of keys for the results_dict property."""
+        return ["metrics/mAP", "metrics/recall1", "metrics/recall5"]
+
+    @property
+    def curves(self):
+        """Returns a list of curves for accessing specific metrics curves."""
+        return []
+
+    @property
+    def curves_results(self):
+        """Returns a list of curves for accessing specific metrics curves."""
+        return []

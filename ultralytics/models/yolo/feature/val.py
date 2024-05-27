@@ -1,11 +1,11 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import torch
-
-from ultralytics.data import ClassificationDataset, build_dataloader
+import os
+from ultralytics.data import FeatureDataset, build_dataloader
 from ultralytics.engine.validator import BaseValidator
 from ultralytics.utils import LOGGER
-from ultralytics.utils.metrics import ClassifyMetrics, ConfusionMatrix
+from ultralytics.utils.metrics import ClassifyMetrics, ConfusionMatrix, FeatureMetrics
 from ultralytics.utils.plotting import plot_images
 
 
@@ -32,17 +32,17 @@ class FeatureValidator(BaseValidator):
         self.targets = None
         self.pred = None
         self.args.task = "feature"
-        self.metrics = ClassifyMetrics()
+        self.metrics = FeatureMetrics()
 
     def get_desc(self):
         """Returns a formatted string summarizing classification metrics."""
-        return ("%22s" + "%11s" * 2) % ("classes", "top1_acc", "top5_acc")
+        return ("%22s" + "%11s" * 3) % ("feature", "mAP", "recall1", "recall5")
 
     def init_metrics(self, model):
         """Initialize confusion matrix, class names, and top-1 and top-5 accuracy."""
         self.names = model.names
         self.nc = len(model.names)
-        self.confusion_matrix = ConfusionMatrix(nc=self.nc, conf=self.args.conf, task="classify")
+        #  self.confusion_matrix = ConfusionMatrix(nc=self.nc, conf=self.args.conf, task="classify")
         self.pred = []
         self.targets = []
 
@@ -55,20 +55,21 @@ class FeatureValidator(BaseValidator):
 
     def update_metrics(self, preds, batch):
         if isinstance(preds, tuple) or isinstance(preds, list):
-            preds = preds[1]
+            preds = preds[0]
         """Updates running metrics with model predictions and batch targets."""
-        n5 = min(len(self.names), 5)
-        self.pred.append(preds.argsort(1, descending=True)[:, :n5].type(torch.int32).cpu())
-        self.targets.append(batch["cls"].type(torch.int32).cpu())
+        featur_norm = torch.sqrt(torch.sum(torch.square(preds), dim=1, keepdim=True))
+        batch_feas = torch.divide(preds, featur_norm)
+        self.pred = batch_feas if len(self.pred) == 0 else torch.concat((self.pred, batch_feas), dim=0)
+        self.targets = batch['cls'] if len(self.targets) == 0 else torch.concat((self.targets, batch["cls"]), dim=0)
 
     def finalize_metrics(self, *args, **kwargs):
         """Finalizes metrics of the model such as confusion_matrix and speed."""
-        self.confusion_matrix.process_cls_preds(self.pred, self.targets)
-        if self.args.plots:
-            for normalize in True, False:
-                self.confusion_matrix.plot(
-                    save_dir=self.save_dir, names=self.names.values(), normalize=normalize, on_plot=self.on_plot
-                )
+        #  self.confusion_matrix.process_cls_preds(self.pred, self.targets)
+        #  if self.args.plots:
+            #  for normalize in True, False:
+            #      self.confusion_matrix.plot(
+            #          save_dir=self.save_dir, names=self.names.values(), normalize=normalize, on_plot=self.on_plot
+        #          )
         self.metrics.speed = self.speed
         self.metrics.confusion_matrix = self.confusion_matrix
         self.metrics.save_dir = self.save_dir
@@ -80,7 +81,10 @@ class FeatureValidator(BaseValidator):
 
     def build_dataset(self, img_path):
         """Creates and returns a ClassificationDataset instance using given image path and preprocessing parameters."""
-        return ClassificationDataset(root=img_path, args=self.args, augment=False, prefix=self.args.split)
+        #  return ClassificationDataset(root=img_path, args=self.args, augment=False, prefix=self.args.split)
+        cls_label_path = os.path.join(img_path, "val.txt")
+        assert os.path.exists(cls_label_path), "{} dose not exist!!".format(cls_label_path)
+        return FeatureDataset(image_root=img_path, cls_label_path=cls_label_path, args=self.args, augment=False)
 
     def get_dataloader(self, dataset_path, batch_size):
         """Builds and returns a data loader for classification tasks with given parameters."""
@@ -90,7 +94,7 @@ class FeatureValidator(BaseValidator):
     def print_results(self):
         """Prints evaluation metrics for YOLO object detection model."""
         pf = "%22s" + "%11.3g" * len(self.metrics.keys)  # print format
-        LOGGER.info(pf % ("all", self.metrics.top1, self.metrics.top5))
+        LOGGER.info(pf % ("all", self.metrics.mAP, self.metrics.recall1, self.metrics.recall5))
 
     def plot_val_samples(self, batch, ni):
         """Plot validation image samples."""
