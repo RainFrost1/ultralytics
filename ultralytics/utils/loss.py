@@ -821,6 +821,6 @@ class v8FeatureLoss:
         loss_total = self.metric_loss_weight * metric_loss + self.cls_loss_weight * ce_loss
         #  loss_items = ce_loss.detach() + metric_loss_item
         #  return loss_total, loss_items
-        loss[0] = metric_loss_item
-        loss[1] = ce_loss.detach()
+        loss[0] = metric_loss_item * self.metric_loss_weight
+        loss[1] = ce_loss.detach() * self.cls_loss_weight
         return loss_total, loss.detach()

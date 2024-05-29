@@ -1358,7 +1358,8 @@ class FeatureMetrics(SimpleClass):
             correct = (sorted_labels == query_label).float().cpu()
             precision_at_i = correct.cumsum(0) / torch.arange(1, correct.size(0) + 1).float()
             ap = (precision_at_i * correct).sum() / correct.sum()
-            aps.append(ap.item())
+            if not np.isnan(ap):
+                aps.append(ap.item())
 
         cmc = cmc.float() / num_valid_queries
         self.recall1 = cmc[0].cpu().numpy()
