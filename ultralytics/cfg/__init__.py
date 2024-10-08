@@ -38,6 +38,7 @@ TASK2DATA = {
     "detect": "coco8.yaml",
     "segment": "coco8-seg.yaml",
     "classify": "imagenet10",
+    "feature": "imagenet10",
     "pose": "coco8-pose.yaml",
     "obb": "dota8.yaml",
 }
@@ -45,6 +46,7 @@ TASK2MODEL = {
     "detect": "yolo11n.pt",
     "segment": "yolo11n-seg.pt",
     "classify": "yolo11n-cls.pt",
+    "feature": "yolov11n-feature.pt",
     "pose": "yolo11n-pose.pt",
     "obb": "yolo11n-obb.pt",
 }
@@ -52,6 +54,7 @@ TASK2METRIC = {
     "detect": "metrics/mAP50-95(B)",
     "segment": "metrics/mAP50-95(M)",
     "classify": "metrics/accuracy_top1",
+    "feature": "metrics/accuracy_top1",
     "pose": "metrics/mAP50-95(P)",
     "obb": "metrics/mAP50-95(B)",
 }
@@ -110,6 +113,7 @@ CFG_FLOAT_KEYS = {  # integer or float arguments, i.e. x=2 and x=2.0
     "time",
     "workspace",
     "batch",
+    "metric"
 }
 CFG_FRACTION_KEYS = {  # fractional float arguments with 0.0<=values<=1.0
     "dropout",

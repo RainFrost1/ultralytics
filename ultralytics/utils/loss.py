@@ -605,7 +605,9 @@ class v8ClassificationLoss:
 
     def __call__(self, preds, batch):
         """Compute the classification loss between predictions and true labels."""
-        loss = F.cross_entropy(preds, batch["cls"], reduction="mean")
+        if isinstance(preds, tuple):
+            preds = preds[1]
+        loss = torch.nn.functional.cross_entropy(preds, batch["cls"], reduction="mean")
         loss_items = loss.detach()
         return loss, loss_items
 
@@ -743,3 +745,111 @@ class E2EDetectLoss:
         one2one = preds["one2one"]
         loss_one2one = self.one2one(one2one, batch)
         return loss_one2many[0] + loss_one2one[0], loss_one2many[1] + loss_one2one[1]
+
+
+class TripletAngularMarginLoss(nn.Module):
+    """A more robust triplet loss with hard positive/negative mining on angular margin instead of relative distance between d(a,p) and d(a,n).
+
+    Args:
+        margin (float, optional): angular margin. Defaults to 0.5.
+        normalize_feature (bool, optional): whether to apply L2-norm in feature before computing distance(cos-similarity). Defaults to True.
+        reduction (str, optional): reducing option within an batch . Defaults to "mean".
+        add_absolute (bool, optional): whether add absolute loss within d(a,p) or d(a,n). Defaults to False.
+        absolute_loss_weight (float, optional): weight for absolute loss. Defaults to 1.0.
+        ap_value (float, optional): weight for d(a, p). Defaults to 0.9.
+        an_value (float, optional): weight for d(a, n). Defaults to 0.5.
+        feature_from (str, optional): which key feature from. Defaults to "features".
+    """
+
+    #  def __init__(self):
+        #  super().__init()
+
+    def __init__(self, cfg = None):
+        super(TripletAngularMarginLoss, self).__init__()
+        assert isinstance(cfg, dict)
+        self.margin = cfg.get('margin', 0.5)
+        self.ranking_loss = torch.nn.MarginRankingLoss(margin=self.margin, reduction=cfg.get('reduction', 'mean'))
+        self.normalize_feature = cfg.get('normalize_feature', True)
+        self.add_absolute = cfg.get('add_absolute', True)
+        self.ap_value = cfg.get('ap_value', 0.8)
+        self.an_value = cfg.get('an_value', 0.4)
+        self.absolute_loss_weight = cfg.get('absolute_loss_weight', 0.1)
+
+    def forward(self, inputs, target):
+        """
+        Args:
+            inputs: feature matrix with shape (batch_size, feat_dim)
+            target: ground truth labels with shape (num_classes)
+        """
+        # inputs = pred[feature_from]
+
+        if self.normalize_feature:
+            inputs = torch.divide(
+                inputs, torch.norm(
+                    inputs, p=2, dim=-1, keepdim=True))
+
+        bs = inputs.shape[0]
+
+        # compute distance(cos-similarity)
+        dist = torch.matmul(inputs, inputs.t())
+
+        # hard negative mining
+        is_pos = target.expand(
+             (bs, bs)).eq(target.expand(bs, bs).t())
+        is_neg = target.expand(
+             (bs, bs)).not_equal(target.expand(bs, bs).t())
+
+        # `dist_ap` means distance(anchor, positive)
+        # both `dist_ap` and `relative_p_inds` with shape [N, 1]
+        dist_ap = torch.min(torch.reshape(
+            torch.masked_select(dist, is_pos), (bs, -1)),
+                             dim=1,
+                             keepdim=True)
+        # `dist_an` means distance(anchor, negative)
+        # both `dist_an` and `relative_n_inds` with shape [N, 1]
+        dist_an = torch.max(torch.reshape(
+            torch.masked_select(dist, is_neg), (bs, -1)),
+                             dim=1,
+                             keepdim=True)
+        # shape [N]
+        dist_ap = torch.squeeze(dist_ap.values, dim=1)
+        dist_an = torch.squeeze(dist_an.values, dim=1)
+
+        # Compute ranking hinge loss
+        y = torch.ones_like(dist_an)
+        loss = self.ranking_loss(dist_ap, dist_an, y)
+        #  loss = torch.nn.functional.margin_ranking_loss(dist_ap, dist_an, y)
+        if self.add_absolute:
+            absolut_loss_ap = self.ap_value - dist_ap
+            absolut_loss_ap = torch.where(absolut_loss_ap > 0,
+                                           absolut_loss_ap,
+                                           torch.zeros_like(absolut_loss_ap))
+
+            absolut_loss_an = dist_an - self.an_value
+            absolut_loss_an = torch.where(absolut_loss_an > 0,
+                                           absolut_loss_an,
+                                           torch.ones_like(absolut_loss_an))
+
+            loss = (absolut_loss_an.mean() + absolut_loss_ap.mean()
+                    ) * self.absolute_loss_weight + loss.mean()
+        return loss, loss.detach()
+
+
+class v8FeatureLoss:
+
+    def __init__(self, metric_loss_cfg, cls_loss_cfg):
+        self.metric_loss = TripletAngularMarginLoss(metric_loss_cfg)
+        self.cls_loss = torch.nn.CrossEntropyLoss(reduction='mean')
+        self.metric_loss_weight = metric_loss_cfg.get('weight', 1)
+        self.cls_loss_weight = cls_loss_cfg.get('weight', 1)
+
+    def __call__(self, preds, batch):
+        loss = torch.zeros(2, device=preds[0].device)  # box, cls, dfl
+        metric_loss, metric_loss_item = self.metric_loss(preds[0], batch["cls"])
+        ce_loss = self.cls_loss(preds[1], batch["cls"])
+        loss_total = self.metric_loss_weight * metric_loss + self.cls_loss_weight * ce_loss
+        #  loss_items = ce_loss.detach() + metric_loss_item
+        #  return loss_total, loss_items
+        loss[0] = metric_loss_item * self.metric_loss_weight
+        loss[1] = ce_loss.detach() * self.cls_loss_weight
+        return loss_total, loss.detach()

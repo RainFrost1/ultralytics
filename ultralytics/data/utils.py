@@ -421,6 +421,28 @@ def check_cls_dataset(dataset, split=""):
     return {"train": train_set, "val": val_set, "test": test_set, "nc": nc, "names": names}
 
 
+def check_feature_dataset(dataset, split=""):
+    label_path = os.path.join(dataset, "train.txt")
+    assert os.path.exists(label_path)
+    with open(label_path) as fd:
+        lines = fd.readlines()
+        label_set = set()
+        for line in lines:
+            line = line.strip().split()
+            label_set.add(str(line[1]))
+        names = {
+            newlabel: oldlabel
+            for newlabel, oldlabel in enumerate(label_set)
+        }
+        data = {
+            "train": dataset,
+            "val": dataset,
+            "test": None,
+            "nc": len(names.keys()),
+            "names": names,
+        }
+    return data
+
 class HUBDatasetStats:
     """
     A class for generating HUB dataset JSON and `-hub` dataset directory.

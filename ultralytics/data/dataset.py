@@ -6,7 +6,7 @@ from collections import defaultdict
 from itertools import repeat
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
-
+import os
 import cv2
 import numpy as np
 import torch
@@ -516,3 +516,90 @@ class ClassificationDataset:
         x["msgs"] = msgs  # warnings
         save_dataset_cache_file(self.prefix, path, x, DATASET_CACHE_VERSION)
         return samples
+
+
+class FeatureDataset(ClassificationDataset):
+
+    def __init__(self,
+                 image_root,
+                 cls_label_path,
+                 args,
+                 augment=False,
+                 prefix=""):
+        self._img_root = image_root
+        self._cls_path = cls_label_path
+        self.images = []
+        self.labels = []
+        self.relabel = True
+        self._load_anno()
+        scale = (1.0 - args.scale, 1.0)  # (0.08, 1.0)
+        self.torch_transforms = (
+            classify_augmentations(
+                size=args.imgsz,
+                scale=scale,
+                hflip=args.fliplr,
+                vflip=args.flipud,
+                erasing=args.erasing,
+                auto_augment=args.auto_augment,
+                hsv_h=args.hsv_h,
+                hsv_s=args.hsv_s,
+                hsv_v=args.hsv_v,
+            )
+            if augment
+            else classify_transforms(size=args.imgsz, crop_fraction=args.crop_fraction)
+        )
+        self.names = {}
+        for i, x in enumerate(self.labels):
+            self.names[i] = str(x)
+
+    def _load_anno(self, seed=None):
+        assert os.path.exists(
+            self._cls_path), f"path {self._cls_path} does not exist."
+        assert os.path.exists(
+            self._img_root), f"path {self._img_root} does not exist."
+        self.images = []
+        self.labels = []
+
+        with open(self._cls_path) as fd:
+            lines = fd.readlines()
+            if self.relabel:
+                label_set = set()
+                for line in lines:
+                    line = line.strip().split()
+                    label_set.add(np.int64(line[1]))
+                label_map = {
+                    oldlabel: newlabel
+                    for newlabel, oldlabel in enumerate(label_set)
+                }
+
+            if seed is not None:
+                np.random.RandomState(seed).shuffle(lines)
+            for line in lines:
+                line = line.strip().split()
+                self.images.append(os.path.join(self._img_root, line[0]))
+                if self.relabel:
+                    self.labels.append(label_map[np.int64(line[1])])
+                else:
+                    self.labels.append(np.int64(line[1]))
+                assert os.path.exists(self.images[
+                    -1]), f"path {self.images[-1]} does not exist."
+
+    def __getitem__(self, idx):
+        #  print(idx)
+        try:
+            img = cv2.imread(self.images[idx])
+            img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            sample = self.torch_transforms(img)
+            return {"img": sample, "cls": self.labels[idx]}
+        except Exception as ex:
+            print("Exception occured when parse line: {} with msg: {}".
+                         format(self.images[idx], ex))
+            rnd_idx = np.random.randint(self.__len__())
+            return self.__getitem__(rnd_idx)
+
+    def __len__(self):
+        return len(self.images)
+
+    @property
+    def class_num(self):
+        return len(set(self.labels))
