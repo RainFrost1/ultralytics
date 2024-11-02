@@ -3,7 +3,7 @@
 
 # Parameters
 nc: 1000 # number of classes
-feature_dim: 512
+feature_dim: 1024
 MetricLoss:
   weight: 1.0
   margin: 0.5
