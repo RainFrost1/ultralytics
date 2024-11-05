@@ -632,9 +632,10 @@ def yolo_bbox2segment(im_dir, save_dir=None, sam_model="sam_b.pt"):
         txt_file = save_dir / lb_name
         cls = label["cls"]
         for i, s in enumerate(label["segments"]):
+            if len(s) == 0:
+                continue
             line = (int(cls[i]), *s.reshape(-1))
             texts.append(("%g " * len(line)).rstrip() % line)
-        if texts:
             with open(txt_file, "a") as f:
                 f.writelines(text + "\n" for text in texts)
     LOGGER.info(f"Generated segment labels saved in {save_dir}")
@@ -685,7 +686,7 @@ def create_synthetic_coco_dataset():
             # Read image filenames from label list file
             label_list_file = dir / f"{subset}.txt"
             if label_list_file.exists():
-                with open(label_list_file, "r") as f:
+                with open(label_list_file) as f:
                     image_files = [dir / line.strip() for line in f]
 
                 # Submit all tasks

@@ -38,6 +38,7 @@ FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLO
 ASSETS = ROOT / "assets"  # default images
 DEFAULT_CFG_PATH = ROOT / "cfg/default.yaml"
+DEFAULT_SOL_CFG_PATH = ROOT / "cfg/solutions/default.yaml"  # Ultralytics solutions yaml path
 NUM_THREADS = min(8, max(1, os.cpu_count() - 1))  # number of YOLO multiprocessing threads
 AUTOINSTALL = str(os.getenv("YOLO_AUTOINSTALL", True)).lower() == "true"  # global auto-install mode
 VERBOSE = str(os.getenv("YOLO_VERBOSE", True)).lower() == "true"  # global verbose mode
@@ -508,6 +509,7 @@ def yaml_print(yaml_file: Union[str, Path, dict]) -> None:
 
 # Default configuration
 DEFAULT_CFG_DICT = yaml_load(DEFAULT_CFG_PATH)
+DEFAULT_SOL_DICT = yaml_load(DEFAULT_SOL_CFG_PATH)  # Ultralytics solutions configuration
 for k, v in DEFAULT_CFG_DICT.items():
     if isinstance(v, str) and v.lower() == "none":
         DEFAULT_CFG_DICT[k] = None
@@ -523,10 +525,11 @@ def read_device_model() -> str:
     Returns:
         (str): Model file contents if read successfully or empty string otherwise.
     """
-    with contextlib.suppress(Exception):
+    try:
         with open("/proc/device-tree/model") as f:
             return f.read()
-    return ""
+    except Exception:
+        return ""
 
 
 def is_ubuntu() -> bool:
@@ -536,10 +539,11 @@ def is_ubuntu() -> bool:
     Returns:
         (bool): True if OS is Ubuntu, False otherwise.
     """
-    with contextlib.suppress(FileNotFoundError):
+    try:
         with open("/etc/os-release") as f:
             return "ID=ubuntu" in f.read()
-    return False
+    except FileNotFoundError:
+        return False
 
 
 def is_colab():
@@ -564,16 +568,16 @@ def is_kaggle():
 
 def is_jupyter():
     """
-    Check if the current script is running inside a Jupyter Notebook. Verified on Colab, Jupyterlab, Kaggle, Paperspace.
+    Check if the current script is running inside a Jupyter Notebook.
 
     Returns:
         (bool): True if running inside a Jupyter Notebook, False otherwise.
-    """
-    with contextlib.suppress(Exception):
-        from IPython import get_ipython
 
-        return get_ipython() is not None
-    return False
+    Note:
+        - Only works on Colab and Kaggle, other environments like Jupyterlab and Paperspace are not reliably detectable.
+        - "get_ipython" in globals() method suffers false positives when IPython package installed manually.
+    """
+    return IS_COLAB or IS_KAGGLE
 
 
 def is_docker() -> bool:
@@ -583,10 +587,11 @@ def is_docker() -> bool:
     Returns:
         (bool): True if the script is running inside a Docker container, False otherwise.
     """
-    with contextlib.suppress(Exception):
+    try:
         with open("/proc/self/cgroup") as f:
             return "docker" in f.read()
-    return False
+    except Exception:
+        return False
 
 
 def is_raspberrypi() -> bool:
@@ -617,14 +622,15 @@ def is_online() -> bool:
     Returns:
         (bool): True if connection is successful, False otherwise.
     """
-    with contextlib.suppress(Exception):
+    try:
         assert str(os.getenv("YOLO_OFFLINE", "")).lower() != "true"  # check if ENV var YOLO_OFFLINE="True"
         import socket
 
         for dns in ("1.1.1.1", "8.8.8.8"):  # check Cloudflare and Google DNS
             socket.create_connection(address=(dns, 80), timeout=2.0).close()
             return True
-    return False
+    except Exception:
+        return False
 
 
 def is_pip_package(filepath: str = __name__) -> bool:
@@ -711,9 +717,11 @@ def get_git_origin_url():
         (str | None): The origin URL of the git repository or None if not git directory.
     """
     if IS_GIT_DIR:
-        with contextlib.suppress(subprocess.CalledProcessError):
+        try:
             origin = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
             return origin.decode().strip()
+        except subprocess.CalledProcessError:
+            return None
 
 
 def get_git_branch():
@@ -724,9 +732,11 @@ def get_git_branch():
         (str | None): The current git branch name or None if not a git directory.
     """
     if IS_GIT_DIR:
-        with contextlib.suppress(subprocess.CalledProcessError):
+        try:
             origin = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
             return origin.decode().strip()
+        except subprocess.CalledProcessError:
+            return None
 
 
 def get_default_args(func):
@@ -751,9 +761,11 @@ def get_ubuntu_version():
         (str): Ubuntu version or None if not an Ubuntu OS.
     """
     if is_ubuntu():
-        with contextlib.suppress(FileNotFoundError, AttributeError):
+        try:
             with open("/etc/os-release") as f:
                 return re.search(r'VERSION_ID="(\d+\.\d+)"', f.read())[1]
+        except (FileNotFoundError, AttributeError):
+            return None
 
 
 def get_user_config_dir(sub_dir="Ultralytics"):
@@ -793,10 +805,10 @@ def get_user_config_dir(sub_dir="Ultralytics"):
 PROC_DEVICE_MODEL = read_device_model()  # is_jetson() and is_raspberrypi() depend on this constant
 ONLINE = is_online()
 IS_COLAB = is_colab()
+IS_KAGGLE = is_kaggle()
 IS_DOCKER = is_docker()
 IS_JETSON = is_jetson()
 IS_JUPYTER = is_jupyter()
-IS_KAGGLE = is_kaggle()
 IS_PIP_PACKAGE = is_pip_package()
 IS_RASPBERRYPI = is_raspberrypi()
 GIT_DIR = get_git_dir()
@@ -1187,7 +1199,7 @@ class SettingsManager(JSONDict):
             "neptune": True,  # Neptune integration
             "raytune": True,  # Ray Tune integration
             "tensorboard": True,  # TensorBoard logging
-            "wandb": True,  # Weights & Biases logging
+            "wandb": False,  # Weights & Biases logging
             "vscode_msg": True,  # VSCode messaging
         }
 

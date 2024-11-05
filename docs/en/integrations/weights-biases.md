@@ -106,16 +106,19 @@ Before diving into the usage instructions for YOLO11 model training with Weights
 | project  | `None`  | Specifies the name of the project logged locally and in W&B. This way you can group multiple runs together.        |
 | name     | `None`  | The name of the training run. This determines the name used to create subfolders and the name used for W&B logging |
 
-!!! Tip "Enable or Disable Weights & Biases"
-If you want to enable or disable Weights & Biases logging, you can use the `wandb` command. By default, Weights & Biases logging is enabled.
+!!! tip "Enable or Disable Weights & Biases"
 
-    ```bash
-    # Enable Weights & Biases logging
-    wandb enabled
+    If you want to enable or disable Weights & Biases logging, you can use the `wandb` command. By default, Weights & Biases logging is enabled.
 
-    # Disable Weights & Biases logging
-    wandb disabled
-    ```
+    === "CLI"
+
+        ```bash
+        # Enable Weights & Biases logging
+        wandb enabled
+
+        # Disable Weights & Biases logging
+        wandb disabled
+        ```
 
 ### Understanding the Output
 
@@ -207,7 +210,7 @@ These features help in tracking experiments, optimizing models, and collaboratin
 After running your training script with W&B integration:
 
 1. A link to your W&B dashboard will be provided in the console output.
-2. Click on the link or go to [wandb.ai](https://wandb.ai) and log in to your account.
+2. Click on the link or go to [wandb.ai](https://wandb.ai/) and log in to your account.
 3. Navigate to your project to view detailed metrics, visualizations, and model performance data.
 
 The dashboard offers insights into your model's training process, allowing you to analyze and improve your YOLO11 models effectively.
