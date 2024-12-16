@@ -509,7 +509,10 @@ class FeatureModel(BaseModel):
     def init_criterion(self):
         """Initialize the loss criterion for the ClassificationModel."""
         if self.training:
-            return v8FeatureLoss(self.cfg_dict["MetricLoss"], self.cfg_dict["ClsLoss"])
+            if not self.cfg_dict.get('finetune', False):
+                return v8FeatureLoss(self.cfg_dict["MetricLoss"], self.cfg_dict["ClsLoss"])
+            else:
+                return v8FeatureLoss(self.cfg_dict["MetricLoss"])
         else:
             #  return v8FeatureLoss(self.cfg_dict["MetricLoss"], self.cfg_dict["ClsLoss"])
             return v8ClassificationLoss()

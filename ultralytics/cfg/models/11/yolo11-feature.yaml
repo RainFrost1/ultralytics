@@ -4,6 +4,7 @@
 # Parameters
 nc: 1000 # number of classes
 feature_dim: 1024
+finetune: False
 MetricLoss:
   weight: 1.0
   margin: 0.5

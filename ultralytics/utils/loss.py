@@ -837,19 +837,25 @@ class TripletAngularMarginLoss(nn.Module):
 
 class v8FeatureLoss:
 
-    def __init__(self, metric_loss_cfg, cls_loss_cfg):
+    def __init__(self, metric_loss_cfg, cls_loss_cfg=None):
         self.metric_loss = TripletAngularMarginLoss(metric_loss_cfg)
-        self.cls_loss = torch.nn.CrossEntropyLoss(reduction='mean')
         self.metric_loss_weight = metric_loss_cfg.get('weight', 1)
-        self.cls_loss_weight = cls_loss_cfg.get('weight', 1)
+        if cls_loss_cfg is not None:
+            self.cls_loss = torch.nn.CrossEntropyLoss(reduction='mean')
+            self.cls_loss_weight = cls_loss_cfg.get('weight', 1)
+        else:
+            self.cls_loss = None
 
     def __call__(self, preds, batch):
         loss = torch.zeros(2, device=preds[0].device)  # box, cls, dfl
         metric_loss, metric_loss_item = self.metric_loss(preds[0], batch["cls"])
-        ce_loss = self.cls_loss(preds[1], batch["cls"])
-        loss_total = self.metric_loss_weight * metric_loss + self.cls_loss_weight * ce_loss
-        #  loss_items = ce_loss.detach() + metric_loss_item
-        #  return loss_total, loss_items
-        loss[0] = metric_loss_item * self.metric_loss_weight
-        loss[1] = ce_loss.detach() * self.cls_loss_weight
+        if self.cls_loss is not None:
+            ce_loss = self.cls_loss(preds[1], batch["cls"])
+            loss_total = self.metric_loss_weight * metric_loss + self.cls_loss_weight * ce_loss
+            loss[0] = metric_loss_item * self.metric_loss_weight
+            loss[1] = ce_loss.detach() * self.cls_loss_weight
+        else:
+            loss_total = self.metric_loss_weight * metric_loss
+            loss[0] = metric_loss_item * self.metric_loss_weight
+
         return loss_total, loss.detach()
